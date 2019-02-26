@@ -32,12 +32,23 @@ public class Tile  extends ResourceSupport {
 	Island island;
 
 	/**y*/
-	java.lang.Double latitude;
+	java.lang.Double bottomLeftLatitude;
 
 	/**x*/
-	java.lang.Double longitude;
+	java.lang.Double bottomLeftLongitude;
 
 	private boolean terrain;
+
+	private double topRightLatitude;
+
+	private double topRightLongitude;
+	
+	@ManyToOne(cascade = CascadeType.ALL)
+	private TenDegreeBucket tenDegreeBucket;
+
+	@ManyToOne(cascade = CascadeType.ALL)
+	private OneDegreeBucket oneDegreeBucket;
+	
 
 	public Tile() {
 	}
@@ -48,8 +59,8 @@ public class Tile  extends ResourceSupport {
 	}
 
 	public Tile(java.awt.geom.Point2D.Double neighbour) {
-		latitude = neighbour.y;
-		longitude = neighbour.x;
+		bottomLeftLatitude = neighbour.y;
+		bottomLeftLongitude = neighbour.x;
 		tileIndex = getTileIndex();
 	}
 
@@ -64,19 +75,19 @@ public class Tile  extends ResourceSupport {
 	}
 
 	public java.lang.Double getLatitude() {
-		return latitude;
+		return bottomLeftLatitude;
 	}
 
 	public void setLatitude(java.lang.Double latitude) {
-		this.latitude = latitude;
+		this.bottomLeftLatitude = latitude;
 	}
 
 	public java.lang.Double getLongitude() {
-		return longitude;
+		return bottomLeftLongitude;
 	}
 
 	public void setLongitude(java.lang.Double longitude) {
-		this.longitude = longitude;
+		this.bottomLeftLongitude = longitude;
 	}
 
 	public Island getIsland() {
@@ -88,21 +99,21 @@ public class Tile  extends ResourceSupport {
 	}
 
 	public double getTileWidth() {
-		if (Math.abs(latitude) < 22)
+		if (Math.abs(bottomLeftLatitude) < 22)
 			return 0.125;
-		if (Math.abs(latitude) < 62)
+		if (Math.abs(bottomLeftLatitude) < 62)
 			return 0.25;
-		if (Math.abs(latitude) < 76)
+		if (Math.abs(bottomLeftLatitude) < 76)
 			return 0.5;
-		if (Math.abs(latitude) < 83)
+		if (Math.abs(bottomLeftLatitude) < 83)
 			return 1;
-		if (Math.abs(latitude) < 86)
+		if (Math.abs(bottomLeftLatitude) < 86)
 			return 2;
-		if (Math.abs(latitude) < 88)
+		if (Math.abs(bottomLeftLatitude) < 88)
 			return 4;
-		if (Math.abs(latitude) < 89)
+		if (Math.abs(bottomLeftLatitude) < 89)
 			return 8;
-		if (Math.abs(latitude) <= 90)
+		if (Math.abs(bottomLeftLatitude) <= 90)
 			return 360;
 		return 0.125;
 	}
@@ -117,19 +128,19 @@ public class Tile  extends ResourceSupport {
 	 */
 
 	public int getTileIndex() {
-		if (longitude > 180 || longitude < -180)
-			throw new IllegalArgumentException( "" + longitude + " out of bounds ");
-		if (latitude > 90 || latitude < -90)
-			throw new IllegalArgumentException( "" + latitude + " out of bounds ");
-		double baseY = Math.floor(latitude);
-		int y = (int) ((latitude - baseY) * 8);
+		if (bottomLeftLongitude > 180 || bottomLeftLongitude < -180)
+			throw new IllegalArgumentException( "" + bottomLeftLongitude + " out of bounds ");
+		if (bottomLeftLatitude > 90 || bottomLeftLatitude < -90)
+			throw new IllegalArgumentException( "" + bottomLeftLatitude + " out of bounds ");
+		double baseY = Math.floor(bottomLeftLatitude);
+		int y = (int) ((bottomLeftLatitude - baseY) * 8);
 		double tileWidth = getTileWidth();
-		double base_x = Math.floor(Math.floor(longitude / tileWidth) * tileWidth);
+		double base_x = Math.floor(Math.floor(bottomLeftLongitude / tileWidth) * tileWidth);
 		if (base_x < -180)
 			base_x = -180;
-		double x = Math.floor((longitude - base_x) / tileWidth);
-		int index = ((int) Math.floor(longitude) + 180) << 14;
-		index += ((int) Math.floor(latitude) + 90) << 6;
+		double x = Math.floor((bottomLeftLongitude - base_x) / tileWidth);
+		int index = ((int) Math.floor(bottomLeftLongitude) + 180) << 14;
+		index += ((int) Math.floor(bottomLeftLatitude) + 90) << 6;
 		index += (y << 3);
 		index += x;
 		return index;
@@ -137,33 +148,35 @@ public class Tile  extends ResourceSupport {
 
 	public void updatePosition() {
 		int unpacking = tileIndex;
-		longitude = (double) ((unpacking >>> 14) - 180);
+		bottomLeftLongitude = (double) ((unpacking >>> 14) - 180);
 		unpacking = unpacking - (unpacking & 0xffc000);
-		latitude = (double) (unpacking >>> 6) - 90;
+		bottomLeftLatitude = (double) (unpacking >>> 6) - 90;
 		unpacking = unpacking - (unpacking & 0xffff40);
 
 		int yIndex = (unpacking >>> 3) & 0x07;
-		latitude += yIndex * 0.125;
+		bottomLeftLatitude += yIndex * 0.125;
 		unpacking = unpacking - (unpacking & 0xfffff8);
 		int x = unpacking & 0x07;
 		unpacking -= x;
 		double width = getTileWidth();
-		longitude += x * width;
-		if (longitude > 180 || longitude < -180)
-			throw new IllegalArgumentException( "" + longitude + " out of bounds ");
-		if (latitude > 90 || latitude < -90)
-			throw new IllegalArgumentException( "" + latitude + " out of bounds ");
+		bottomLeftLongitude += x * width;
+		if (bottomLeftLongitude > 180 || bottomLeftLongitude < -180)
+			throw new IllegalArgumentException( "" + bottomLeftLongitude + " out of bounds ");
+		if (bottomLeftLatitude > 90 || bottomLeftLatitude < -90)
+			throw new IllegalArgumentException( "" + bottomLeftLatitude + " out of bounds ");
+		setTopRightLongitude(bottomLeftLongitude + width);
+		setTopRightLatitude(bottomLeftLatitude + 0.125);
 	}
 
 	public ArrayList<Integer> getNeighbours() {
 		ArrayList<Integer> neighbours = new ArrayList<>();
-		if (longitude > 180 || longitude < -180)
-			throw new IllegalArgumentException( "" + longitude + " out of bounds ");
-		if (latitude > 90 || latitude < -90)
-			throw new IllegalArgumentException( "" + latitude + " out of bounds ");
+		if (bottomLeftLongitude > 180 || bottomLeftLongitude < -180)
+			throw new IllegalArgumentException( "" + bottomLeftLongitude + " out of bounds ");
+		if (bottomLeftLatitude > 90 || bottomLeftLatitude < -90)
+			throw new IllegalArgumentException( "" + bottomLeftLatitude + " out of bounds ");
 		// Left/Right
-		if (latitude < 90 && latitude > -90) {
-			java.awt.geom.Point2D.Double neighbour = new java.awt.geom.Point2D.Double(longitude, latitude);
+		if (bottomLeftLatitude < 90 && bottomLeftLatitude > -90) {
+			java.awt.geom.Point2D.Double neighbour = new java.awt.geom.Point2D.Double(bottomLeftLongitude, bottomLeftLatitude);
 			double width = new Tile(neighbour).getTileWidth();
 			neighbour.x -= width;
 			if (neighbour.x < -180)
@@ -175,8 +188,8 @@ public class Tile  extends ResourceSupport {
 				neighbour.x -= 360;
 			neighbours.add(new Tile(neighbour).getTileIndex());
 		}
-		if (latitude < 90) {
-			java.awt.geom.Point2D.Double neighbour = new java.awt.geom.Point2D.Double(longitude, latitude);
+		if (bottomLeftLatitude < 90) {
+			java.awt.geom.Point2D.Double neighbour = new java.awt.geom.Point2D.Double(bottomLeftLongitude, bottomLeftLatitude);
 			neighbour.y += 0.125;
 			int tIndex = new Tile(neighbour).getTileIndex();
 			double width = new Tile(neighbour).getTileWidth();
@@ -188,8 +201,8 @@ public class Tile  extends ResourceSupport {
 			}
 
 		}
-		if (latitude > -90) {
-			java.awt.geom.Point2D.Double neighbour = new java.awt.geom.Point2D.Double(longitude, latitude);
+		if (bottomLeftLatitude > -90) {
+			java.awt.geom.Point2D.Double neighbour = new java.awt.geom.Point2D.Double(bottomLeftLongitude, bottomLeftLatitude);
 			neighbour.y -= 0.125;
 			int tIndex = new Tile(neighbour).getTileIndex();
 			double width = getTileWidth();
@@ -209,5 +222,37 @@ public class Tile  extends ResourceSupport {
 
 	public void setTerrain(boolean terrain) {
 		this.terrain = terrain;
+	}
+
+	public double getTopRightLatitude() {
+		return topRightLatitude;
+	}
+
+	public void setTopRightLatitude(double topRightLatitude) {
+		this.topRightLatitude = topRightLatitude;
+	}
+
+	public double getTopRightLongitude() {
+		return topRightLongitude;
+	}
+
+	public void setTopRightLongitude(double topRightLongitude) {
+		this.topRightLongitude = topRightLongitude;
+	}
+
+	public TenDegreeBucket getTenDegreeBucket() {
+		return tenDegreeBucket;
+	}
+
+	public void setTenDegreeBucket(TenDegreeBucket tenDegreeBucket) {
+		this.tenDegreeBucket = tenDegreeBucket;
+	}
+
+	public OneDegreeBucket getOneDegreeBucket() {
+		return oneDegreeBucket;
+	}
+
+	public void setOneDegreeBucket(OneDegreeBucket oneDegreeBucket) {
+		this.oneDegreeBucket = oneDegreeBucket;
 	}
 }

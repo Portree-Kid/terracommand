@@ -24,8 +24,6 @@ import org.geotools.feature.SchemaException;
 import org.geotools.feature.simple.SimpleFeatureBuilder;
 import org.geotools.map.Layer;
 import org.geotools.map.MapContent;
-import org.geotools.map.MapViewport;
-import org.geotools.swing.JMapFrame;
 import org.opengis.feature.simple.SimpleFeature;
 import org.opengis.feature.simple.SimpleFeatureType;
 import org.springframework.batch.core.ExitStatus;
@@ -43,9 +41,12 @@ import com.vividsolutions.jts.geom.Coordinate;
 import com.vividsolutions.jts.geom.GeometryFactory;
 import com.vividsolutions.jts.geom.LineString;
 
-import de.keithpaterson.terracommand.IslandFinderTasklet.LoggingShapefileDumper;
 import de.keithpaterson.terracommand.entities.Island;
 import de.keithpaterson.terracommand.entities.IslandRepository;
+import de.keithpaterson.terracommand.entities.OneDegreeBucket;
+import de.keithpaterson.terracommand.entities.OneDegreeBucketRepository;
+import de.keithpaterson.terracommand.entities.TenDegreeBucket;
+import de.keithpaterson.terracommand.entities.TenDegreeBucketRepository;
 import de.keithpaterson.terracommand.entities.Tile;
 import de.keithpaterson.terracommand.entities.TileRepository;
 
@@ -86,6 +87,12 @@ public class IslandFinderTasklet implements Runnable, Tasklet, InitializingBean 
 	@Autowired
 	IslandRepository islandRepo;
 
+	@Autowired
+	OneDegreeBucketRepository oneDegreeBucketRepository;
+
+	@Autowired
+	TenDegreeBucketRepository tenDegreeBucketRepository;
+
 	public void run() {
 		loadProperties();
 
@@ -94,6 +101,34 @@ public class IslandFinderTasklet implements Runnable, Tasklet, InitializingBean 
 		walkDirectory();
 		mergeIslands();
 		drawBoxes();
+	}
+
+	public void loadProperties() {
+		try {
+			getProps().load(new FileReader("terramaster.properties"));
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	public ExitStatus buildIndex() {
+		Point2D.Double d = new Point2D.Double(179, 89);
+		while (d.y >= -90) {
+			d.x = 179;
+			while (d.x >= -180) {
+				Tile tile = new Tile(d);
+				indexMap.put(tile.getTileIndex(), tile);
+
+				if (tileRepo.findByTileIndex(tile.getTileIndex()) == null) {
+					tile = tileRepo.save(tile);
+				}
+				logger.info(d.toString() + "\t" + tile + "\t" + tile.getTileIndex());
+				d.x -= tile.getTileWidth();
+
+			}
+			d.y -= 0.125;
+		}
+		return ExitStatus.COMPLETED;
 	}
 
 	@Transactional
@@ -113,11 +148,34 @@ public class IslandFinderTasklet implements Runnable, Tasklet, InitializingBean 
 		return p;
 	}
 
-	public void loadProperties() {
-		try {
-			getProps().load(new FileReader("terramaster.properties"));
-		} catch (Exception e) {
-			e.printStackTrace();
+	@Transactional
+	public void mergeIslands() {
+		int progress = 0;
+		boolean clean = false;
+		while (!clean) {
+			Island newIsland = null;
+			int currentProgress = 0;
+			for (Tile tileIndex : tileRepo.findAll()) {
+				currentProgress += 1;
+				newIsland = null;
+				ArrayList<Integer> neighbours = tileIndex.getNeighbours();
+				for (Integer neighbourIndex : neighbours) {
+					Tile neighbourTile = tileRepo.findByTileIndex(neighbourIndex);
+					// Tile neighbourTile = new Tile(neighbourIndex);
+					if (neighbourTile.getIsland() != null) {
+						if (tileIndex.getIsland() != null && !tileIndex.equals(neighbourTile.getIsland())
+								&& tileIndex.getIsland().hasTiles() && neighbourTile.getIsland().hasTiles()) {
+							newIsland = stitch(tileIndex.getIsland(), neighbourTile.getIsland());
+							break;
+						}
+					}
+				}
+				if (newIsland != null)
+					break;
+			}
+			if (newIsland == null || currentProgress == progress)
+				clean = true;
+			progress = currentProgress;
 		}
 	}
 
@@ -152,7 +210,8 @@ public class IslandFinderTasklet implements Runnable, Tasklet, InitializingBean 
 					continue;
 				SimpleFeatureType schema = null;
 				try {
-					schema = DataUtilities.createType("Tile_" + bucket.getIslandId(), "centerline:LineString,name:\"\",id:0");
+					schema = DataUtilities.createType("Island_" + bucket.getIslandId(),
+							"centerline:LineString,name:\"\",id:0");
 				} catch (SchemaException e) {
 					// TODO Auto-generated catch block
 					e.printStackTrace();
@@ -217,7 +276,7 @@ public class IslandFinderTasklet implements Runnable, Tasklet, InitializingBean 
 		dumper.setMaxDbfSize(maxSize);
 		// actually dump data
 		dumper.dump(fc);
-		
+
 	}
 
 	private LineString drawTile(Tile tileIndex) {
@@ -234,57 +293,6 @@ public class IslandFinderTasklet implements Runnable, Tasklet, InitializingBean 
 		points.add(new Coordinate(longitude, latitude));
 		LineString line = geometryFactory.createLineString((Coordinate[]) points.toArray(new Coordinate[] {}));
 		return line;
-	}
-
-	@Transactional
-	public void mergeIslands() {
-		int progress = 0;
-		boolean clean = false;
-		while (!clean) {
-			Island newIsland = null;
-			int currentProgress = 0;
-			for (Tile tileIndex : tileRepo.findAll()) {
-				currentProgress += 1;
-				newIsland = null;
-				ArrayList<Integer> neighbours = tileIndex.getNeighbours();
-				for (Integer neighbourIndex : neighbours) {
-					Tile neighbourTile = tileRepo.findByTileIndex(neighbourIndex);
-//					Tile neighbourTile = new Tile(neighbourIndex);
-					if (neighbourTile.getIsland() != null) {
-						if (tileIndex.getIsland() != null && !tileIndex.equals(neighbourTile.getIsland())
-								&& tileIndex.getIsland().hasTiles() && neighbourTile.getIsland().hasTiles()) {
-							newIsland = stitch(tileIndex.getIsland(), neighbourTile.getIsland());
-							break;
-						}
-					}
-				}
-				if (newIsland != null)
-					break;
-			}
-			if (newIsland == null || currentProgress == progress)
-				clean = true;
-			progress = currentProgress;
-		}
-	}
-
-	public ExitStatus buildIndex() {
-		Point2D.Double d = new Point2D.Double(179, 89);
-		while (d.y >= -90) {
-			d.x = 179;
-			while (d.x >= -180) {
-				Tile tile = new Tile(d);
-				indexMap.put(tile.getTileIndex(), tile);
-
-				if (tileRepo.findByTileIndex(tile.getTileIndex()) == null) {
-					tile = tileRepo.save(tile);
-				}
-				logger.info(d.toString() + "\t" + tile + "\t" + tile.getTileIndex());
-				d.x -= tile.getTileWidth();
-
-			}
-			d.y -= 0.125;
-		}
-		return ExitStatus.COMPLETED;
 	}
 
 	private void add(Path p) {
@@ -317,19 +325,13 @@ public class IslandFinderTasklet implements Runnable, Tasklet, InitializingBean 
 	private void addTerrainFile(Path p, Matcher m) {
 		int index = Integer.parseInt(m.group(1));
 		logger.info("Adding " + index);
-		Tile tileIndex = tileRepo.findByTileIndex(index);
-		if (tileIndex == null) {
-			tileIndex = tileRepo.save(new Tile(index));
-		}
+		Tile tileIndex = getOrCreateTileIndex(index);
 
 		tileIndex.setTerrain(true);
 		ArrayList<Integer> neighbours = tileIndex.getNeighbours();
 		Island island = null;
 		for (Integer neighbourIndex : neighbours) {
-			Tile neighbourTile = tileRepo.findByTileIndex(neighbourIndex);
-			if (neighbourTile == null) {
-				neighbourTile = tileRepo.save(new Tile(neighbourIndex));
-			}
+			Tile neighbourTile = getOrCreateTileIndex(neighbourIndex);
 			if (neighbourTile.getIsland() != null) {
 				if (island != null && !island.equals(neighbourTile.getIsland())) {
 					island = stitch(island, neighbourTile.getIsland());
@@ -351,16 +353,43 @@ public class IslandFinderTasklet implements Runnable, Tasklet, InitializingBean 
 			bucket.add(tileIndex);
 
 			for (Integer neighbourIndex : neighbours) {
-				Tile neighbourTile = tileRepo.findByTileIndex(neighbourIndex);
-				if (neighbourTile == null) {
-					neighbourTile = tileRepo.save(new Tile(neighbourIndex));
-				}
+				Tile neighbourTile = getOrCreateTileIndex(neighbourIndex);
 				neighbourTile.setIsland(island);
 				neighbourTile = tileRepo.save(neighbourTile);
 				bucket.add(neighbourTile);
 			}
 			bucket = islandRepo.save(bucket);
 		}
+	}
+
+	private Tile getOrCreateTileIndex(Integer tileIndex) {
+		Tile neighbourTile = tileRepo.findByTileIndex(tileIndex);
+		if (neighbourTile == null) {
+			neighbourTile = tileRepo.save(new Tile(tileIndex));
+		}
+		if (true || neighbourTile.getTenDegreeBucket() == null) {
+			TenDegreeBucket bucket = tenDegreeBucketRepository
+					.getByName(TenDegreeBucket.calcName(neighbourTile.getLongitude(), neighbourTile.getLatitude()));
+			if (bucket == null) {
+				bucket = new TenDegreeBucket(
+						TenDegreeBucket.calcName(neighbourTile.getLongitude(), neighbourTile.getLatitude()));
+				bucket = tenDegreeBucketRepository.save(bucket);
+			}
+			neighbourTile.setTenDegreeBucket(bucket);
+			tileRepo.save(neighbourTile);
+		}
+		if (true || neighbourTile.getOneDegreeBucket() == null) {
+			OneDegreeBucket bucket = oneDegreeBucketRepository
+					.getByName(OneDegreeBucket.calcName(neighbourTile.getLongitude(), neighbourTile.getLatitude()));
+			if (bucket == null) {
+				bucket = new OneDegreeBucket(
+						OneDegreeBucket.calcName(neighbourTile.getLongitude(), neighbourTile.getLatitude()));
+				bucket = oneDegreeBucketRepository.save(bucket);
+			}
+			neighbourTile.setOneDegreeBucket(bucket);
+			tileRepo.save(neighbourTile);
+		}
+		return neighbourTile;
 	}
 
 	private Island stitch(Island islandIndex, Island island) {
