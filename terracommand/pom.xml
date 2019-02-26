@@ -7,6 +7,19 @@
 		<artifactId>spring-boot-starter-parent</artifactId>
 		<version>2.0.5.RELEASE</version>
 	</parent>
+	<scm>
+		<url>https://github.com/Portree-Kid/terracommand.git</url>
+		<connection>scm:git:git://github.com/Portree-Kid/terracommand.git</connection>
+		<developerConnection>scm:git:git@github.com:Portree-Kid/terracommand.git</developerConnection>
+	  <tag>HEAD</tag>
+  </scm>
+	<distributionManagement>
+		<repository>
+			<id>internal.repo</id>
+			<name>Internal repo</name>
+			<url>file:///C:/terramaster-release</url>
+		</repository>
+	</distributionManagement>
 	<properties>
 		<geotools.version>15.2</geotools.version>
 	</properties>
