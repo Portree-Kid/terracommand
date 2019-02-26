@@ -34,6 +34,7 @@ import org.springframework.batch.core.step.tasklet.Tasklet;
 import org.springframework.batch.repeat.RepeatStatus;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.stereotype.Component;
 
@@ -92,6 +93,9 @@ public class IslandFinderTasklet implements Runnable, Tasklet, InitializingBean 
 
 	@Autowired
 	TenDegreeBucketRepository tenDegreeBucketRepository;
+	
+	@Value("${terrasync.path}")
+	private String basePath;
 
 	public void run() {
 		loadProperties();
@@ -133,7 +137,7 @@ public class IslandFinderTasklet implements Runnable, Tasklet, InitializingBean 
 
 	@Transactional
 	public Path walkDirectory() {
-		String path = "C:\\Users\\keith.paterson\\Documents\\FlightGear\\TerraSync" + File.separator + "Terrain";
+		String path = basePath + File.separator + "Terrain";
 
 		Path p = Paths.get(path);
 		try {
