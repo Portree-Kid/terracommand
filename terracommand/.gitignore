@@ -1,6 +1,10 @@
+<<<<<<< HEAD
 /.settings/
 /terracommand/
 /.classpath
 /.project
 /target/
 /bin/
+=======
+/target/
+>>>>>>> refs/heads/old_master
