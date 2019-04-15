@@ -11,6 +11,7 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -146,8 +147,8 @@ public class IslandFinderTasklet implements Runnable, Tasklet, InitializingBean 
 			});
 
 		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+			logger.log(Level.SEVERE, e.toString(), e);
+			throw new RuntimeException(e);
 		}
 		return p;
 	}
